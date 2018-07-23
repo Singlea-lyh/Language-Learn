@@ -1,0 +1,158 @@
+一、一般用法
+   #：将宏参数变为字符串， 例如：#define STR(s) #s  "s的内容"
+   ##：将两个宏参数贴合在一起， 例如：#define CONS(a, b) a#c#b  acb //a和
+b转换为对应的参数值
+
+二、当宏参数是另外一个宏的时候：凡是宏定义中有#和##的地方宏参数不会展开，此时需要多加一层中间转换宏
+  1, 非'#'和'##'的情况 
+#define TOW       (2) 
+#define MUL(a,b) (a*b) 
+
+printf("%d*%d=%d\n", TOW, TOW, MUL(TOW,TOW)); 
+这行的宏会被展开为： 
+printf("%d*%d=%d\n", (2), (2), ((2)*(2))); 
+MUL里的参数TOW会被展开为(2). 
+
+2, 当有'#'或'##'的时候 
+#define A           (2) 
+#define STR(s)      #s 
+#define CONS(a,b)   int(a##e##b) 
+
+printf("int max: %s\n",   STR(INT_MAX));     // INT_MAX ＃i nclude<climits> 
+这行会被展开为： 
+printf("int max: %s\n", "INT_MAX"); 
+
+printf("%s\n", CONS(A, A));                // compile error  
+这一行则是： 
+printf("%s\n", int(AeA)); 
+
+INT_MAX和A都不会再被展开, 然而解决这个问题的方法很简单. 加多一层中间转换宏. 
+加这层宏的用意是把所有宏的参数在这层里全部展开, 那么在转换宏里的那一个宏(_STR)就能得到正确的宏参数. 
+
+#define A            (2) 
+#define _STR(s)      #s 
+#define STR(s)       _STR(s)           // 转换宏 
+#define _CONS(a,b)   int(a##e##b) 
+#define CONS(a,b)    _CONS(a,b)        // 转换宏 
+
+printf("int max: %s\n", STR(INT_MAX));           // INT_MAX,int型的最大值，为一个变量 ＃i nclude<climits> 
+输出为: int max: 0x7fffffff 
+STR(INT_MAX) -->   _STR(0x7fffffff) 然后再转换成字符串； 
+
+printf("%d\n", CONS(A, A)); 
+输出为：200 
+CONS(A, A)   -->   _CONS((2), (2))   --> int((2)e(2)) 
+
+三、'#'和'##'的一些应用特例 
+1、合并匿名变量名 
+#define   ___ANONYMOUS1(type, var, line)   type   var##line 
+#define   __ANONYMOUS0(type, line)   ___ANONYMOUS1(type, _anonymous, line) 
+#define   ANONYMOUS(type)   __ANONYMOUS0(type, __LINE__) 
+例：ANONYMOUS(static int);   即: static int _anonymous70;   70表示该行行号； 
+第一层：ANONYMOUS(static int);   -->   __ANONYMOUS0(static int, __LINE__); 
+第二层：                         -->   ___ANONYMOUS1(static int, _anonymous, 70); 
+第三层：                         -->   static int   _anonymous70; 
+即每次只能解开当前层的宏，所以__LINE__在第二层才能被解开； 
+
+2、填充结构 
+#define   FILL(a)    {a, #a} 
+
+enum IDD{OPEN, CLOSE}; 
+typedef struct MSG{ 
+   IDD id; 
+   const char * msg; 
+}MSG; 
+
+MSG _msg[] = {FILL(OPEN), FILL(CLOSE)}; 
+相当于： 
+MSG _msg[] = {{OPEN, "OPEN"}, 
+               {CLOSE, "CLOSE"}}; 
+
+3、记录文件名 
+#define   _GET_FILE_NAME(f)    #f 
+#define   GET_FILE_NAME(f)     _GET_FILE_NAME(f) 
+static char   FILE_NAME[] = GET_FILE_NAME(__FILE__); 
+
+4、得到一个数值类型所对应的字符串缓冲大小 
+#define   _TYPE_BUF_SIZE(type)   sizeof #type 
+#define   TYPE_BUF_SIZE(type)    _TYPE_BUF_SIZE(type) 
+char   buf[TYPE_BUF_SIZE(INT_MAX)]; 
+      -->   char   buf[_TYPE_BUF_SIZE(0x7fffffff)]; 
+      -->   char   buf[sizeof "0x7fffffff"]; 
+这里相当于： 
+char   buf[11];
+
+5 先看下面三条语句：
+
+#define Conn(x,y) x##y
+#define ToChar(x) #@x
+#define ToString(x) #x
+
+(1). ## 连接操作符
+##表示连接(token pasting, or token concatenation，merge two tokens into one while expanding macros)。x##y表示什么？表示x连接y，举例说：
+
+int n = Conn(123,456);
+     ==> int n=123456;
+char* str = Conn("asdf", "adf");
+     ==> char* str = "asdfadf";
+
+怎么样，很神奇吧！
+
+需要注意的是，##的左右符号必须能够组成一个有意义的符号，否则预处理器会报错。
+
+(2). #@ 字符化操作符
+#@x只能用于有传入参数的宏定义中，且必须置于宏定义体中的参数名前。作用是将传的单字符参数名转换成字符，以一对单引用括起来其实就是给x加上单引号，结果返回是一个const char。 
+举例说：
+
+char a = ToChar(1);
+     ==> char a='1';
+
+做个越界试验
+
+char a = ToChar(123);
+     ==> char a='3';
+
+但是如果你的参数超过四个字符，编译器就给给你报错了！error C2015: too many characters in constant ：P
+
+(3). # 字符串化操作符
+#表示字符串化操作符（stringification）。其作用是：将宏定义中的传入参数名转换成用一对双引号括起来参数名字符串。其只能用于有传入参数的宏定义中，且必须置于宏定义体中的参数名前。说白了，他是给x加双引号：
+
+char* str = ToString(123132);
+     ==> char* str="123132";
+
+如果你想要对展开后的宏参数进行字符串化，则需要使用两层宏。
+
+#define xstr(s) str(s)
+#define str(s) #s
+#define foo 4
+str (foo)
+     ==> "foo"
+xstr (foo)
+     ==> xstr (4)
+     ==> str (4)
+     ==> "4"
+
+s参数在str宏中被字符串化，所以它不是优先被宏展开。然而s参数是xstr宏的一个普通参数，在被传递到str宏之前已经被宏展开。
+
+(4). \ 行继续操作
+\ 行继续操作当定义的宏不能用一行表达完整时，可以用”\”（反斜线）表示下一行继续此宏的定义。
+
+注意:最后一行不要加续行符啊.
+
+VC的预处理器在编译之前会自动将\与换行回车去掉（写成多行时，反斜杠后不能有空格，否则编译器（ARM或VC）会报错！），这样一来既不影响阅读,又不影响逻辑,皆大欢喜.
+
+(5). __VA_ARGS__
+__VA_ARGS__宏用来接受不定数量的参数。例如：
+
+#define eprintf(...) fprintf (stderr, __VA_ARGS__)
+
+eprintf ("%s:%d: ", input_file, lineno)
+    ==>  fprintf (stderr, "%s:%d: ", input_file, :lineno)
+
+当__VA_ARGS__宏前面##时，可以省略参数输入。例如：
+
+#define eprintf(format, ...) fprintf (stderr, format, ##__VA_ARGS__)
+
+eprintf ("success!\n")
+    ==> fprintf(stderr, "success!\n");
+
